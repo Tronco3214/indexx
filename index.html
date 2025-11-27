@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Validador de Tickets</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f0f0; text-align: center; min-height: 100vh; }
+    h1 { color: #1a1a1a; }
+    input { padding: 15px; font-size: 18px; width: 90%; max-width: 400px; margin: 10px; }
+    button { padding: 15px 30px; font-size: 18px; background: #10b981; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    .valid { background: #10b981; color: white; padding: 60px 20px; font-size: 48px; border-radius: 20px; margin: 20px; }
+    .invalid { background: #ef4444; color: white; padding: 60px 20px; font-size: 48px; border-radius: 20px; margin: 20px; }
+    .info { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin: 20px; }
+  </style>
+</head>
+<body>
+  <h1>🎫 Validador de Tickets</h1>
+
+  <div id="home">
+    <p><strong>Ingresa la clave secreta para validar tickets</strong></p>
+    <input type="password" id="secret" placeholder="Clave secreta">
+    <br>
+    <button onclick="saveSecret()">Guardar clave y activar</button>
+    <br><br>
+    <button onclick="clearSecret()" style="background:#ef4444;">Borrar clave guardada</button>
+    <p id="status" style="margin-top:20px; font-weight:bold;"></p>
+  </div>
+
+  <div id="verifying" style="display:none;">
+    <div class="info" id="ticketInfo"></div>
+    <div id="result"></div>
+  </div>
+
+<script>
+async function generateHash(id, holderName, eventName, timestamp, secretKey) {
+  const data = `${id}|||${holderName}|||${eventName}|||${timestamp}|||${secretKey}`;
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(data);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function saveSecret() {
+  const secret = document.getElementById('secret').value.trim();
+  if (!secret) return alert('Ingresa la clave secreta');
+  localStorage.setItem('ticketSecret', secret);
+  document.getElementById('status').innerHTML = '✅ Clave guardada correctamente';
+  checkForData();
+}
+
+function clearSecret() {
+  localStorage.removeItem('ticketSecret');
+  document.getElementById('status').innerHTML = '❌ Clave borrada';
+}
+
+async function verify(obj, secret) {
+  const computed = await generateHash(obj.id, obj.holderName || '', obj.eventName || '', obj.ts, secret);
+  const result = document.getElementById('result');
+  if (computed === obj.hash) {
+    result.innerHTML = `<div class="valid">✓ VÁLIDO</div>
+      <h2>${obj.holderName}</h2>
+      <p>Puede ingresar al evento</p>
+      <h3>${obj.eventName}</h3>`;
+    new Audio('https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-254.mp3').play();
+  } else {
+    result.innerHTML = `<div class="invalid">✗ INVÁLIDO</div><p>Ticket falso o alterado</p>`;
+    new Audio('https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3').play();
+  }
+}
+
+function checkForData() {
+  const params = new URLSearchParams(location.search);
+  const dataParam = params.get('data');
+  if (!dataParam) return;
+
+  try {
+    const decoded = decodeURIComponent(dataParam);
+    const obj = JSON.parse(decoded);
+
+    document.getElementById('home').style.display = 'none';
+    document.getElementById('verifying').style.display = 'block';
+    document.getElementById('ticketInfo').innerHTML = `
+      <h2>Ticket ID: ${obj.id}</h2>
+      <p><strong>Titular:</strong> ${obj.holderName || 'Sin nombre'}</p>
+      <p><strong>Evento:</strong> ${obj.eventName || 'Mi Evento'}</p>
+    `;
+
+    const savedSecret = localStorage.getItem('ticketSecret');
+    if (savedSecret) {
+      verify(obj, savedSecret);
+    } else {
+      document.getElementById('result').innerHTML = '<p style="color:#f59e0b; font-size:20px;">Clave secreta no configurada<br>Abre la página sin ?data= para ingresarla</p>';
+    }
+  } catch (e) {
+    document.getElementById('result').innerHTML = '<div class="invalid">QR inválido o dañado</div>';
+  }
+}
+
+window.onload = () => {
+  if (localStorage.getItem('ticketSecret')) {
+    document.getElementById('status').innerHTML = '✅ Clave ya guardada - Listo para validar';
+  }
+  checkForData();
+};
+</script>
+</body>
+</html>
