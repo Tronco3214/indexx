@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="es">
-  
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,27 +18,37 @@
     #reader{max-width:500px;margin:20px auto;border-radius:20px;overflow:hidden}
     button{background:#ff2a6d;color:#fff;border:none;padding:22px 70px;font-size:28px;font-weight:bold;border-radius:50px;margin:20px;cursor:pointer;animation:pulse 2s infinite;box-shadow:0 10px 30px rgba(255,42,109,0.5)}
     @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
+    .debug{background:#333;color:#0f0;padding:10px;margin:10px auto;max-width:500px;font-family:monospace;font-size:12px;text-align:left;border-radius:5px;display:none}
   </style>
 </head>
 <body>
   <h1>Queen 2025</h1>
   
   <div id="setup" style="margin-top:50px">
-    <input type="password" id="secret" placeholder="Clave secreta" style="padding:18px;font-size:20px;width:80%;max-width:350px;border-radius:50px;border:none;margin:10px"><br>
+    <input type="password" id="secret" placeholder="Clave secreta (usa la misma del generador)" style="padding:18px;font-size:20px;width:80%;max-width:350px;border-radius:50px;border:none;margin:10px"><br>
     <button onclick="init()">ACTIVAR CONTROL DE ACCESO</button>
+    <p style="color:#999;font-size:14px;margin-top:20px">⚠️ Usa la MISMA clave secreta con la que generaste los QR</p>
   </div>
 
   <div id="scanner" style="display:none">
     <div class="card" id="info"></div>
     <div id="reader"></div>
     <div id="result"></div>
+    <div class="debug" id="debug"></div>
     <div id="nextButtonContainer" style="display:none;margin-top:40px">
       <button onclick="restartScanning()">SIGUIENTE →</button>
     </div>
   </div>
 
 <script>
-let db, html5QrCode, secretKey;
+let db, html5QrCode, secretKey, isScanning = false;
+
+function log(msg){
+  const debugDiv = document.getElementById('debug');
+  debugDiv.style.display = 'block';
+  debugDiv.innerHTML += msg + '<br>';
+  console.log(msg);
+}
 
 async function generateHash(id,holder,event,ts,secret){
   const data=`${id}|||${holder}|||${event}|||${ts}|||${secret}`;
@@ -53,25 +62,59 @@ function showResult(type, extra = ''){
   let html = '';
   let sound = '';
   let autoNext = false;
-  if(type==='valid'){ html='<div class="valid">BIENVENIDO</div>'; sound='https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-254.mp3'; autoNext=true; }
-  else if(type==='used'){ html=`<div class="used">YA INGRESÓ</div>${extra?`<p style="font-size:20px;margin-top:20px">Usado el ${extra}</p>`:''}`; sound='https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3'; }
-  else { html='<div class="invalid">FALSIFICADO O INVÁLIDO</div>'; sound='https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3'; }
+  
+  if(type==='valid'){ 
+    html='<div class="valid">✅ BIENVENIDO</div>'; 
+    sound='https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-254.mp3'; 
+    autoNext=true; 
+  }
+  else if(type==='used'){ 
+    html=`<div class="used">⚠️ YA INGRESÓ</div>${extra?`<p style="font-size:20px;margin-top:20px">Usado el ${extra}</p>`:''}`; 
+    sound='https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3'; 
+  }
+  else { 
+    html='<div class="invalid">❌ FALSIFICADO O INVÁLIDO</div><p style="color:#ff2a6d;margin-top:20px">Verifica que la clave secreta sea correcta</p>'; 
+    sound='https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3'; 
+  }
+  
   document.getElementById('result').innerHTML = html;
-  new Audio(sound).play();
+  new Audio(sound).play().catch(()=>{});
+  
   document.getElementById('nextButtonContainer').style.display = autoNext ? 'none' : 'block';
-  if(autoNext) setTimeout(restartScanning, 4000);
+  
+  if(autoNext) {
+    setTimeout(restartScanning, 3000);
+  }
 }
 
 async function validateTicket(obj){
+  log(`🔍 Validando ticket: ${obj.id}`);
+  log(`📋 Titular: ${obj.holderName}`);
+  log(`🎫 Evento: ${obj.eventName}`);
+  log(`🔑 Clave usada: ${secretKey.substring(0,3)}...`);
+  
   const realHash = await generateHash(obj.id, obj.holderName||'', obj.eventName||'', obj.ts, secretKey);
-  if(realHash !== obj.hash) return {success:false, type:'invalid'};
+  
+  log(`🔐 Hash recibido: ${obj.hash.substring(0,20)}...`);
+  log(`🔐 Hash calculado: ${realHash.substring(0,20)}...`);
+  
+  if(realHash !== obj.hash) {
+    log('❌ HASH NO COINCIDE - Clave secreta incorrecta');
+    return {success:false, type:'invalid'};
+  }
+  
+  log('✅ Hash válido');
+  
   const snap = await db.ref('used/'+obj.id).once('value');
   if(snap.exists()){
     const used = snap.val();
     const time = new Date(used.usedAt).toLocaleString('es-ES');
+    log('⚠️ Ticket ya usado el ' + time);
     return {success:false, type:'used', extra:time};
   }
+  
   await db.ref('used/'+obj.id).set({usedAt:Date.now(), holder:obj.holderName||'Sin nombre'});
+  log('✅ Ticket marcado como usado');
   return {success:true, type:'valid'};
 }
 
@@ -86,50 +129,78 @@ async function processValidation(obj){
 }
 
 function startScanning(){
+  if(isScanning) return;
+  
   document.getElementById('info').innerHTML = `<h2 style="margin:10px;font-size:38px;color:#ff2a6d;margin-bottom:20px">Queen 2025</h2><p style="font-size:26px;color:#fff">Apunta al código QR</p>`;
   document.getElementById('result').innerHTML = '';
+  document.getElementById('debug').innerHTML = '';
+  document.getElementById('nextButtonContainer').style.display = 'none';
+  
   Html5Qrcode.getCameras().then(cameras => {
     if(cameras && cameras.length){
       html5QrCode = new Html5Qrcode("reader");
+      isScanning = true;
+      
       html5QrCode.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: {width:300, height:300} },
         async decodedText => {
+          if(!isScanning) return;
+          isScanning = false;
+          
           html5QrCode.stop();
+          log('📱 QR escaneado: ' + decodedText.substring(0,50) + '...');
+          
           try{
             const url = new URL(decodedText.trim());
             const data = url.searchParams.get('data');
-            if(!data) throw '';
+            if(!data) throw 'No data param';
+            
             const obj = JSON.parse(decodeURIComponent(data));
             await processValidation(obj);
-          }catch{
+          }catch(err){
+            log('❌ Error al decodificar: ' + err);
             showResult('invalid');
             setTimeout(restartScanning, 3000);
           }
         }
       ).catch(err => {
-        document.getElementById('info').innerHTML += '<p style="color:#ff2a6d">Error cámara</p>';
+        isScanning = false;
+        log('❌ Error cámara: ' + err);
+        document.getElementById('info').innerHTML += '<p style="color:#ff2a6d">Error al acceder a la cámara</p>';
       });
     }
   }).catch(() => {
-    document.getElementById('info').innerHTML += '<p style="color:#ff2a6d">Permite acceso a cámara</p>';
+    document.getElementById('info').innerHTML += '<p style="color:#ff2a6d">Permite acceso a la cámara</p>';
   });
 }
 
 function restartScanning(){
+  isScanning = false;
   if(html5QrCode){
-    html5QrCode.stop().then(startScanning).catch(startScanning);
-  }else startScanning();
+    html5QrCode.stop().then(() => {
+      setTimeout(startScanning, 500);
+    }).catch(() => {
+      setTimeout(startScanning, 500);
+    });
+  }else {
+    startScanning();
+  }
 }
 
 async function init(){
   secretKey = document.getElementById('secret').value.trim();
   if(!secretKey) return alert('Ingresa la clave secreta');
+  
   localStorage.setItem('queenSecret', secretKey);
+  log('🔑 Clave secreta guardada: ' + secretKey.substring(0,3) + '...');
+  
   document.getElementById('setup').style.display='none';
   document.getElementById('scanner').style.display='block';
+  
   firebase.initializeApp({databaseURL:"https://queen2025-2-default-rtdb.firebaseio.com/"});
   db = firebase.database();
+  log('🔥 Firebase inicializado');
 
   const params = new URLSearchParams(location.search);
   const data = params.get('data');
@@ -148,7 +219,6 @@ async function init(){
 
 if(localStorage.getItem('queenSecret')){
   document.getElementById('secret').value = localStorage.getItem('queenSecret');
-  init();
 }
 </script>
 </body>
