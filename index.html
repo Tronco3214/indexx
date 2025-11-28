@@ -93,6 +93,14 @@ async function validateTicket(obj){
   log(`🎫 Evento: ${obj.eventName}`);
   log(`🔑 Clave usada: ${secretKey.substring(0,3)}...`);
   
+  // VERIFICAR WHITELIST PRIMERO
+  const validSnap = await db.ref('valid/'+obj.id).once('value');
+  if(!validSnap.exists()){
+    log('❌ TICKET NO ESTÁ EN WHITELIST - No fue subido a Firebase');
+    return {success:false, type:'invalid'};
+  }
+  log('✅ Ticket encontrado en whitelist');
+  
   const realHash = await generateHash(obj.id, obj.holderName||'', obj.eventName||'', obj.ts, secretKey);
   
   log(`🔐 Hash recibido: ${obj.hash.substring(0,20)}...`);
