@@ -3,128 +3,138 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Validador ÚNICO USO</title>
+  <title>Queen 2025 - Control de Acceso</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
   <style>
-    body { font-family: Arial; margin:0; padding:20px; background:#111; color:white; text-align:center; min-height:100vh; }
-    h1 { color:#10b981; }
-    .valid { background:#10b981; padding:50px; font-size:48px; border-radius:20px; margin:20px; animation:pulse 1s infinite; }
-    .already-used { background:#f59e0b; padding:50px; font-size:40px; border-radius:20px; margin:20px; }
-    .invalid { background:#ef4444; padding:50px; font-size:48px; border-radius:20px; margin:20px; }
-    .info { background:rgba(255,255,255,0.1); padding:20px; border-radius:12px; margin:20px; backdrop-filter:blur(10px); }
-    button { padding:15px 30px; font-size:18px; background:#10b981; border:none; border-radius:8px; color:white; margin:10px; }
-    @keyframes pulse { 0%{transform:scale(1)} 50%{transform:scale(1.05)} 100%{transform:scale(1)} }
+    body{font-family:Arial;background:#000;color:#fff;margin:0;padding:20px;min-height:100vh;text-align:center}
+    h1{color:#ff2a6d;font-size:32px;margin:20px 0}
+    .card{background:rgba(255,255,255,0.1);padding:25px;border-radius:20px;margin:20px auto;max-width:400px}
+    .valid{background:#00ff9d;color:#000;padding:90px 40px;font-size:70px;font-weight:bold;border-radius:30px;margin:40px 20px;animation:pulse 1s infinite}
+    .used{background:#ff9500;color:#fff;padding:70px 40px;font-size:50px;border-radius:30px;margin:40px 20px}
+    .invalid{background:#ff2a6d;color:#fff;padding:70px 40px;font-size:50px;border-radius:30px;margin:40px 20px}
+    .ready{background:#00ff9d;color:#000;padding:90px 40px;font-size:70px;font-weight:bold;border-radius:30px;margin:40px 20px;animation:pulse 1.5s infinite}
+    
+    button{background:#ff2a6d;color:#fff;border:none;padding:22px 70px;font-size:28px;font-weight:bold;border-radius:50px;margin:20px;cursor:pointer;animation:pulse 2s infinite;box-shadow:0 10px 30px rgba(255,42,109,0.5)}
+    @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
   </style>
 </head>
 <body>
-  <h1>Validador Entrada Única</h1>
-  <div id="setup" style="margin:30px;">
-    <input type="password" id="secret" placeholder="Clave secreta del evento" style="padding:w-full;padding:15px;font-size:18px;border-radius:8px;border:none;margin:10px;">
-    <br>
-    <input type="text" id="firebase" placeholder="URL de Firebase (sin /used.json)" value="https://tu-proyecto-default-rtdb.firebaseio.com" style="padding:15px;font-size:16px;width:90%;max-width:500px;border-radius:8px;border:none;margin:10px;">
-    <br>
-    <button onclick="init()">Iniciar Validador</button>
+  <h1>Queen 2025</h1>
+  
+  <div id="setup" style="margin-top:50px">
+    <input type="password" id="secret" placeholder="Clave secreta" style="padding:18px;font-size:20px;width:80%;max-width:350px;border-radius:50px;border:none;margin:10px"><br>
+    <button onclick="init()">ACTIVAR CONTROL DE ACCESO</button>
   </div>
 
-  <div id="scanner" style="display:none;">
-    <div class="info" id="info"></div>
+  <div id="scanner" style="display:none">
+    <div class="card" id="info"></div>
     <div id="result"></div>
-    <button onclick="location.reload()">Escanear otro</button>
+    
+    <!-- BOTÓN INTEGRADO - solo aparece cuando es inválido/usado -->
+    <div id="nextButtonContainer" style="display:none;margin-top:40px">
+      <button onclick="window.location.href = location.pathname">
+        SIGUIENTE →
+      </button>
+    </div>
   </div>
 
 <script>
 let db;
-async function generateHash(id, holderName, eventName, timestamp, secretKey) {
-  const data = `${id}|||${holderName}|||${eventName}|||${timestamp}|||${secretKey}`;
-  const encoder = new TextEncoder();
-  const dataBuffer = encoder.encode(data);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+async function generateHash(id,holder,event,ts,secret){
+  const data=`${id}|||${holder}|||${event}|||${ts}|||${secret}`;
+  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-async function init() {
-  const secret = document.getElementById('secret').value.trim();
-  const firebaseBase = document.getElementById('firebase').value.trim();
-  if (!secret || !firebaseBase) return alert('Completa ambos campos');
+async function init(){
+  const secret=document.getElementById('secret').value.trim();
+  if(!secret)return alert('Ingresa la clave secreta');
+  localStorage.setItem('queenSecret',secret);
+  document.getElementById('setup').style.display='none';
+  document.getElementById('scanner').style.display='block';
 
-  localStorage.setItem('eventSecret', secret);
-  localStorage.setItem('firebaseUrl', firebaseBase);
-
-  // Inicializar Firebase
-  const firebaseConfig = {
-    databaseURL: firebaseBase
-  };
-  firebase.initializeApp(firebaseConfig);
-  db = firebase.database();
-
-  document.getElementById('setup').style.display = 'none';
-  document.getElementById('scanner').style.display = 'block';
-  checkForData(secret);
+  firebase.initializeApp({databaseURL:"https://queen2025-2-default-rtdb.firebaseio.com"});
+  db=firebase.database();
+  checkQR(secret);
 }
 
-async function checkForData(secret) {
-  const params = new URLSearchParams(location.search);
-  const dataParam = params.get('data');
-  if (!dataParam) {
-    document.getElementById('result').innerHTML = '<p>Escanea un QR para validar</p>';
+async function checkQR(secret){
+  const params=new URLSearchParams(location.search);
+  const data=params.get('data');
+
+  // === PANTALLA LISTO PARA ESCANEAR (sin QR) ===
+  if(!data){
+    document.getElementById('info').innerHTML = `
+      <h2 style="margin:10px;font-size:38px;color:#ff2a6d;margin-bottom:20px">Queen 2025</h2>
+      <p style="font-size:26px;color:#fff">Listo para escanear</p>
+    `;
+    document.getElementById('result').innerHTML = `
+      <div class="ready">LISTO</div>
+    `;
+    document.getElementById('nextButtonContainer').style.display = 'none';
     return;
   }
 
-  try {
-    const obj = JSON.parse(decodeURIComponent(dataParam));
-    const computedHash = await generateHash(obj.id, obj.holderName||'', obj.eventName||'', obj.ts, secret);
+  // === HAY QR → VALIDAR ===
+  try{
+    const obj=JSON.parse(decodeURIComponent(data));
 
-    document.getElementById('info').innerHTML = `
-      <h2>${obj.holderName || 'Sin nombre'}</h2>
-      <h3>${obj.eventName || 'Evento'}</h3>
-      <p><strong>Ticket:</strong> ${obj.id}</p>
+    document.getElementById('info').innerHTML=`
+      <h2 style="margin:10px;font-size:32px;color:#ff2a6d">${obj.holderName||'Sin nombre'}</h2>
+      <p style="font-size:22px;margin:5px">Ticket: <b>${obj.id}</b></p>
+      ${obj.eventName ? `<p style="font-size:18px;color:#ccc">${obj.eventName}</p>` : ''}
     `;
 
-    if (computedHash !== obj.hash) {
-      document.getElementById('result').innerHTML = '<div class="invalid">QR FALSIFICADO</div>';
+    const realHash=await generateHash(obj.id,obj.holderName||'',obj.eventName||'',obj.ts,secret);
+    if(realHash!==obj.hash){
+      document.getElementById('result').innerHTML='<div class="invalid">FALSIFICADO</div>';
+      new Audio('https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3').play();
+      document.getElementById('nextButtonContainer').style.display = 'block';
+      history.replaceState(null, null, location.pathname);
       return;
     }
 
-    // Verificar si ya fue usado
-    const snapshot = await db.ref('used/' + obj.id).once('value');
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      document.getElementById('result').innerHTML = `
-        <div class="already-used">YA USADO</div>
-        <p>Entrada usada el ${new Date(data.usedAt).toLocaleString()} por ${data.usedBy || 'desconocido'}</p>
+    const snap=await db.ref('used/'+obj.id).once('value');
+    
+    if(snap.exists()){
+      const used=snap.val();
+      document.getElementById('result').innerHTML=`
+        <div class="used">YA INGRESÓ</div>
+        <p style="font-size:20px;margin-top:20px">Usado el ${new Date(used.usedAt).toLocaleString('es-ES')}</p>
       `;
       new Audio('https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3').play();
-      return;
+      document.getElementById('nextButtonContainer').style.display = 'block';
+    }else{
+      await db.ref('used/'+obj.id).set({usedAt:Date.now(),holder:obj.holderName||'Sin nombre'});
+      document.getElementById('result').innerHTML='<div class="valid">BIENVENIDO</div>';
+      new Audio('https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-254.mp3').play();
+      document.getElementById('nextButtonContainer').style.display = 'none';
+
+      // Auto siguiente en 4 segundos si es válido
+      setTimeout(() => {
+        window.location.href = location.pathname;
+      }, 4000);
     }
 
-    // Marcar como usado
-    await db.ref('used/' + obj.id).set({
-      usedAt: Date.now(),
-      usedBy: navigator.userAgent.substring(0,50),
-      holderName: obj.holderName,
-      eventName: obj.eventName
-    });
+    history.replaceState(null, null, location.pathname);
 
-    document.getElementById('result').innerHTML = '<div class="valid">ENTRADA VÁLIDA<br>¡BIENVENIDO!</div>';
-    new Audio('https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-254.mp3').play();
-
-  } catch (e) {
-    document.getElementById('result').innerHTML = '<div class="invalid">QR INVÁLIDO</div>';
+  }catch(e){
+    document.getElementById('result').innerHTML='<div class="invalid">QR INVÁLIDO</div>';
+    new Audio('https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3').play();
+    document.getElementById('nextButtonContainer').style.display = 'block';
+    history.replaceState(null, null, location.pathname);
   }
 }
 
-// Cargar configuración guardada
-window.onload = () => {
-  const savedSecret = localStorage.getItem('eventSecret');
-  const savedUrl = localStorage.getItem('firebaseUrl');
-  if (savedSecret && savedUrl) {
-    document.getElementById('secret').value = savedSecret;
-    document.getElementById('firebase').value = savedUrl;
-    init();
-  }
-};
+// Cargar clave guardada
+if(localStorage.getItem('queenSecret')){
+  document.getElementById('secret').value=localStorage.getItem('queenSecret');
+  init();
+}else if(location.search.includes('data=')){
+  document.getElementById('scanner').style.display='none';
+}
 </script>
 </body>
 </html>
