@@ -1,156 +1,21 @@
 <!DOCTYPE html>
 <html lang="es">
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Queen 2025 - Control de Acceso</title>
+  <meta charset="utf-8" />
+  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Generador de Códigos QR para eventos" />
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+  <title>Generador de Códigos QR - Queen 2025</title>
+  
+  <!-- Scripts de Firebase -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-  <script src="https://unpkg.com/html5-qrcode"></script>
-  <style>
-    body{font-family:Arial,sans-serif;background:#000;color:#fff;margin:0;padding:20px;min-height:100vh;text-align:center}
-    h1{color:#ff2a6d;font-size:32px;margin:20px 0}
-    .card{background:rgba(255,255,255,0.1);padding:25px;border-radius:20px;margin:20px auto;max-width:400px}
-    .valid{background:#00ff9d;color:#000;padding:90px 40px;font-size:70px;font-weight:bold;border-radius:30px;margin:40px 20px;animation:pulse 1s infinite}
-    .used{background:#ff9500;color:#fff;padding:70px 40px;font-size:50px;border-radius:30px;margin:40px 20px}
-    .invalid{background:#ff2a6d;color:#fff;padding:70px 40px;font-size:50px;border-radius:30px;margin:40px 20px}
-    .ready{background:#00ff9d;color:#000;padding:90px 40px;font-size:70px;font-weight:bold;border-radius:30px;margin:40px 20px;animation:pulse 1.5s infinite}
-    #reader{max-width:500px;margin:20px auto;border-radius:20px;overflow:hidden}
-    button{background:#ff2a6d;color:#fff;border:none;padding:22px 70px;font-size:28px;font-weight:bold;border-radius:50px;margin:20px;cursor:pointer;animation:pulse 2s infinite;box-shadow:0 10px 30px rgba(255,42,109,0.5)}
-    @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
-  </style>
 </head>
 <body>
-  <h1>Queen 2025</h1>
-  
-  <div id="setup" style="margin-top:50px">
-    <input type="password" id="secret" placeholder="Clave secreta" style="padding:18px;font-size:20px;width:80%;max-width:350px;border-radius:50px;border:none;margin:10px"><br>
-    <button onclick="init()">ACTIVAR CONTROL DE ACCESO</button>
-  </div>
-
-  <div id="scanner" style="display:none">
-    <div class="card" id="info"></div>
-    <div id="reader"></div>
-    <div id="result"></div>
-    <div id="nextButtonContainer" style="display:none;margin-top:40px">
-      <button onclick="restartScanning()">SIGUIENTE →</button>
-    </div>
-  </div>
-
-<script>
-let db, html5QrCode, secretKey;
-
-async function generateHash(id,holder,event,ts,secret){
-  const data=`${id}|||${holder}|||${event}|||${ts}|||${secret}`;
-  const encoder = new TextEncoder();
-  const dataBuffer = encoder.encode(data);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-function showResult(type, extra = ''){
-  let html = '';
-  let sound = '';
-  let autoNext = false;
-  if(type==='valid'){ html='<div class="valid">BIENVENIDO</div>'; sound='https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-254.mp3'; autoNext=true; }
-  else if(type==='used'){ html=`<div class="used">YA INGRESÓ</div>${extra?`<p style="font-size:20px;margin-top:20px">Usado el ${extra}</p>`:''}`; sound='https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3'; }
-  else { html='<div class="invalid">FALSIFICADO O INVÁLIDO</div>'; sound='https://assets.mixkit.co/sfx/preview/mixkit-wrong-answer-fail-notification-380.mp3'; }
-  document.getElementById('result').innerHTML = html;
-  new Audio(sound).play();
-  document.getElementById('nextButtonContainer').style.display = autoNext ? 'none' : 'block';
-  if(autoNext) setTimeout(restartScanning, 4000);
-}
-
-async function validateTicket(obj){
-  const realHash = await generateHash(obj.id, obj.holderName||'', obj.eventName||'', obj.ts, secretKey);
-  if(realHash !== obj.hash) return {success:false, type:'invalid'};
-  const snap = await db.ref('used/'+obj.id).once('value');
-  if(snap.exists()){
-    const used = snap.val();
-    const time = new Date(used.usedAt).toLocaleString('es-ES');
-    return {success:false, type:'used', extra:time};
-  }
-  await db.ref('used/'+obj.id).set({usedAt:Date.now(), holder:obj.holderName||'Sin nombre'});
-  return {success:true, type:'valid'};
-}
-
-async function processValidation(obj){
-  document.getElementById('info').innerHTML = `
-    <h2 style="margin:10px;font-size:32px;color:#ff2a6d">${obj.holderName||'Sin nombre'}</h2>
-    <p style="font-size:22px;margin:5px">Ticket: <b>${obj.id}</b></p>
-    ${obj.eventName?`<p style="font-size:18px;color:#ccc">${obj.eventName}</p>`:''}
-  `;
-  const result = await validateTicket(obj);
-  showResult(result.type, result.extra);
-}
-
-function startScanning(){
-  document.getElementById('info').innerHTML = `<h2 style="margin:10px;font-size:38px;color:#ff2a6d;margin-bottom:20px">Queen 2025</h2><p style="font-size:26px;color:#fff">Apunta al código QR</p>`;
-  document.getElementById('result').innerHTML = '';
-  Html5Qrcode.getCameras().then(cameras => {
-    if(cameras && cameras.length){
-      html5QrCode = new Html5Qrcode("reader");
-      html5QrCode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: {width:300, height:300} },
-        async decodedText => {
-          html5QrCode.stop();
-          try{
-            const url = new URL(decodedText.trim());
-            const data = url.searchParams.get('data');
-            if(!data) throw '';
-            const obj = JSON.parse(decodeURIComponent(data));
-            await processValidation(obj);
-          }catch{
-            showResult('invalid');
-            setTimeout(restartScanning, 3000);
-          }
-        }
-      ).catch(err => {
-        document.getElementById('info').innerHTML += '<p style="color:#ff2a6d">Error cámara</p>';
-      });
-    }
-  }).catch(() => {
-    document.getElementById('info').innerHTML += '<p style="color:#ff2a6d">Permite acceso a cámara</p>';
-  });
-}
-
-function restartScanning(){
-  if(html5QrCode){
-    html5QrCode.stop().then(startScanning).catch(startScanning);
-  }else startScanning();
-}
-
-async function init(){
-  secretKey = document.getElementById('secret').value.trim();
-  if(!secretKey) return alert('Ingresa la clave secreta');
-  localStorage.setItem('queenSecret', secretKey);
-  document.getElementById('setup').style.display='none';
-  document.getElementById('scanner').style.display='block';
-  firebase.initializeApp({databaseURL:"https://queen2025-2-default-rtdb.firebaseio.com/"});
-  db = firebase.database();
-
-  const params = new URLSearchParams(location.search);
-  const data = params.get('data');
-  if(data){
-    try{
-      const obj = JSON.parse(decodeURIComponent(data));
-      await processValidation(obj);
-      history.replaceState(null,null,location.pathname);
-    }catch{
-      showResult('invalid');
-    }
-  }else{
-    startScanning();
-  }
-}
-
-if(localStorage.getItem('queenSecret')){
-  document.getElementById('secret').value = localStorage.getItem('queenSecret');
-  init();
-}
-</script>
+  <noscript>Necesitas habilitar JavaScript para ejecutar esta aplicación.</noscript>
+  <div id="root"></div>
 </body>
 </html>
